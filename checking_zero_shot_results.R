@@ -25,7 +25,7 @@ annotated_data <- annotated_data %>%
 names(zero_shot_classified) <- str_replace_all(names(zero_shot_classified), "\\s", "\\.")
 
 zero_shot_classified_bin <- zero_shot_classified %>% 
-  mutate(across(all_of(vars_col), ~ round(.x, digits = 0))) %>% 
+  mutate(across(all_of(vars_col), ~ ifelse(.x > .95, 1, 0))) %>% 
   pivot_longer(cols = all_of(vars_col), names_to = "label", values_to = "entailment_p")
 
 

@@ -9,6 +9,7 @@ library(stopwords)
 library(tidytext)
 library(quanteda)
 library(stm)
+library(ggdark)
 
 ### Retrieve the data frame with text
 ### This chunk is unique to my dataset, to get the same results, just replace the objects with your texts,
@@ -26,7 +27,7 @@ write.csv(annotated_data_process, "./annotations/classified_training_set.csv")
 
 
 full_text_data <- readxl::read_xlsx("./annotations/class_out2x2.xlsx") %>% 
-  select(doc_id = speech_id, text = Line) %>% 
+  select(doc_id = speech_id, text = Line) %>%  #### Note the creation of a doc_id and text variable
   filter(doc_id != "470_980_499_KNAPP")
 
 
@@ -58,8 +59,73 @@ token_f <- simple_fr %>%
                 token = "words") %>% 
   count(word)
 
+### Retrieved dictionary for stopwords method ####
+###                                           ####
+###                                           ####
+
 token_f2 <- token_f %>% 
-  filter(!(word %in% stoppers))
+  mutate(stem = quanteda::char_wordstem(word, language = "en")) %>% 
+  filter(!(word %in% stoppers)) 
+
+
+### Alternate Approach -> Using tf-idf term frequency - inverse document frequency ####
+###                                                                                ####
+###                                                                                ####
+
+### Lets work on some fancy visualisation, I'll throw these into the pdf when I get to it
+## I got to it, thanks past me
+idf_frame <- token_f %>% 
+  mutate(stem = quanteda::char_wordstem(word, language = "en")) %>% 
+  ungroup() %>% 
+  count(word) %>% 
+  arrange(desc(n))
+
+## This graph, which demostrates an underlying reasoning behind using tf-idf filtering, is shamelessly stolen from Martin Søyland's lecture on the topic
+## Visualising using zipfs law
+
+idf_frame %>% head(300) %>% 
+  ggplot(., aes(x = 1:300, y = n)) +
+  geom_point() +
+  geom_line(aes(group = 1)) +
+  scale_y_continuous(trans = "log") +
+  scale_x_continuous(trans = "log") +
+  geom_smooth(method = "lm", se = FALSE) +
+  ggrepel::geom_label_repel(aes(label = word)) +
+  #ggdark::dark_theme_classic() +
+  labs(x = "Rank (log)", y = "Frequency (log)", title = "Zipf's law illustration")
+
+## High frequency of stopwords
+
+## Next step is to remove the useless tokens
+
+## Utilising tf-idf
+
+Sys.setlocale("LC_ALL", "") ## This line is due to weirdness on my comp
+## For some reason my locale is set to C by default
+## And i mean C the programming language
+
+idf_stop <- token_f %>%
+  ungroup() %>% 
+  bind_tf_idf(word, doc_id, n) %>% 
+  ungroup() %>% 
+  select(word, idf) %>% 
+  unique() %>% 
+  arrange(idf)
+
+print(n=150, head(idf_stop, n=150))
+
+## Check the output, and find the first word you assume still can give meaning to the document
+## Ie a word that still is likely to substantially be connected to the unique topic of the document
+## In my instance, health at idf score 2.72 is still relevant, so i set that as a threshold value
+
+idf_stopper <- idf_stop %>% 
+  filter(idf < 2.71)
+
+tokensquestions2 <- tokensquestions %>%
+  anti_join(idf_stopper, by = "word") # Joining against the stopwords dataframe to get rid of cells with stopwords
+
+
+####### End of the tf-idf approach, remember to use the other term in that instance
 
 token_f2 <- token_f2 %>% 
   mutate(stem = quanteda::char_wordstem(word, language = "en"))
@@ -69,6 +135,15 @@ token_f3 <- token_f2 %>%
   summarise(count = sum(n))
 
 cool_dfm <- token_f3 %>% 
+  cast_dfm(doc_id, stem, count)
+
+### Alternatively, if you used the tf-idf
+
+token_f3 <- tokensquestions2 %>% 
+  group_by(doc_id, stem) %>% 
+  summarise(count = sum(n))
+
+cool_df <- token_f3 %>% 
   cast_dfm(doc_id, stem, count)
 
 
